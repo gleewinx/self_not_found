@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>440: Identity Expired</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: "MS Sans Serif", "JetBrains Mono", monospace;
+    color: #ccc;
+  }
+
+  canvas.background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  /* ===== Classic Error Box ===== */
+  .error-box {
+    position: absolute;
+    background: #c0c0c0;
+    border: 2px solid #000;
+    box-shadow: inset -1px -1px #fff, inset 1px 1px #404040,
+                inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    font-family: "MS Sans Serif", monospace;
+    color: #000;
+    width: 320px;
+  }
+
+  .error-titlebar {
+    background: linear-gradient(to right, #000080, #1084d0);
+    color: #fff;
+    font-weight: bold;
+    padding: 2px 6px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .error-titlebar button {
+    background: #c0c0c0;
+    border: 1px solid #404040;
+    font-size: 10px;
+    line-height: 10px;
+    padding: 0 4px;
+    color: #000;
+    cursor: pointer;
+  }
+
+  .error-content {
+    padding: 14px 16px;
+    background: #c0c0c0;
+    border-top: 2px solid #dfdfdf;
+    border-left: 2px solid #dfdfdf;
+    border-right: 2px solid #808080;
+    border-bottom: 2px solid #808080;
+    font-size: 11px;
+  }
+
+  .error-buttons {
+    text-align: right;
+    margin-top: 10px;
+  }
+
+  .error-buttons button {
+    background: #c0c0c0;
+    border: 2px outset #fff;
+    padding: 2px 10px;
+    margin-left: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .error-buttons button:active {
+    border: 2px inset #fff;
+  }
+</style>
+</head>
+<body>
+<video id="webcam" autoplay playsinline style="display:none;"></video>
+<canvas class="background"></canvas>
+
+<script>
+(async function(){
+  const video = document.getElementById('webcam');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
+    video.srcObject = stream;
+  } catch(err){
+    alert('Webcam access denied or unavailable');
+    return;
+  }
+
+  const bgCanvas = document.querySelector('.background');
+  const bgCtx = bgCanvas.getContext('2d');
+
+  function resizeBackground() {
+    bgCanvas.width = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeBackground);
+  resizeBackground();
+
+  const pixelScale = 0.05;
+  const pixelCanvas = document.createElement('canvas');
+  const pctx = pixelCanvas.getContext('2d');
+  const videoCanvas = document.createElement('canvas');
+  const vctx = videoCanvas.getContext('2d');
+
+  let lastBgUpdate = 0;
+  let bgDelay = 50 + Math.random()*150;
+
+  function animate(timestamp){
+    if(video.videoWidth > 0){
+      videoCanvas.width = video.videoWidth;
+      videoCanvas.height = video.videoHeight;
+      vctx.drawImage(video,0,0);
+
+      if(timestamp - lastBgUpdate > bgDelay){
+        lastBgUpdate = timestamp;
+        bgDelay = 50 + Math.random()*300;
+
+        pixelCanvas.width = Math.max(1, video.videoWidth * pixelScale);
+        pixelCanvas.height = Math.max(1, video.videoHeight * pixelScale);
+        pctx.drawImage(videoCanvas, 0, 0, pixelCanvas.width, pixelCanvas.height);
+
+        const imgData = pctx.getImageData(0,0,pixelCanvas.width,pixelCanvas.height);
+        const totalPixels = imgData.data.length/4;
+        const blackFraction = 0.08;
+        for(let i=0; i<totalPixels*blackFraction; i++){
+          const idx = Math.floor(Math.random()*totalPixels)*4;
+          imgData.data[idx] = 0;
+          imgData.data[idx+1] = 0;
+          imgData.data[idx+2] = 0;
+          imgData.data[idx+3] = 255;
+        }
+        pctx.putImageData(imgData,0,0);
+
+        bgCtx.imageSmoothingEnabled = false;
+        bgCtx.drawImage(pixelCanvas, 0, 0, bgCanvas.width, bgCanvas.height);
+
+        const blockSize = 32;
+        for(let y=0; y<bgCanvas.height; y+=blockSize*2){
+          for(let x=0; x<bgCanvas.width; x+=blockSize*2){
+            if(Math.random() < 0.1){
+              const shiftX = (Math.random()-0.5)*20;
+              const shiftY = (Math.random()-0.5)*20;
+              bgCtx.drawImage(
+                bgCanvas,
+                x, y, blockSize*2, blockSize*2,
+                x + shiftX, y + shiftY, blockSize*2, blockSize*2
+              );
+            }
+          }
+        }
+      }
+    }
+    requestAnimationFrame(animate);
+  }
+
+  video.addEventListener('play', ()=>requestAnimationFrame(animate));
+
+  // === Single error box that respawns on close ===
+  function spawnError(){
+    const error = document.createElement('div');
+    error.className = 'error-box';
+    error.style.left = `${Math.random()*(window.innerWidth-340)}px`;
+    error.style.top = `${Math.random()*(window.innerHeight-180)}px`;
+    error.innerHTML = `
+      <div class="error-titlebar">
+        <span>Error 440 - Session Timeout</span>
+        <button class="close-btn">×</button>
+      </div>
+      <div class="error-content">
+        <p><b>440: Identity Expired</b></p>
+        <p>Your current sense of self has timed out.<br>
+        Please log in again — or take a deep breath and remember who you are.</p>
+        <div class="error-buttons">
+          <button class="retry-btn">Retry</button>
+          <button class="cancel-btn">Cancel</button>
+        </div>
+      </div>`;
+
+    // add to DOM
+    document.body.appendChild(error);
+
+    // attach event listeners
+    const removeAndRespawn = () => {
+      error.remove();
+      setTimeout(spawnError, 200 + Math.random()*400); // small delay for realism
+    };
+
+    error.querySelector('.close-btn').onclick = removeAndRespawn;
+    error.querySelector('.retry-btn').onclick = removeAndRespawn;
+    error.querySelector('.cancel-btn').onclick = removeAndRespawn;
+  }
+
+  // start with one error box
+  spawnError();
+})();
+</script>
+</body>
+</html>
