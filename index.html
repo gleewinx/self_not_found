@@ -22,7 +22,7 @@
     image-rendering: pixelated;
   }
 
-  /* ===== Classic Error Box ===== */
+  /* windows-95-style error box */
   .error-box {
     position: absolute;
     background: #c0c0c0;
@@ -91,6 +91,8 @@
 <script>
 (async function(){
   const video = document.getElementById('webcam');
+
+  // try to grab the webcam feed
   try {
     const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
     video.srcObject = stream;
@@ -102,6 +104,7 @@
   const bgCanvas = document.querySelector('.background');
   const bgCtx = bgCanvas.getContext('2d');
 
+  // keep the canvas full-screen
   function resizeBackground() {
     bgCanvas.width = window.innerWidth;
     bgCanvas.height = window.innerHeight;
@@ -109,14 +112,16 @@
   window.addEventListener('resize', resizeBackground);
   resizeBackground();
 
-  const pixelScale = 0.05;
+  // this controls how pixelated the base image is (higher = smaller pixels)
+  const pixelScale = 0.1;
+
   const pixelCanvas = document.createElement('canvas');
   const pctx = pixelCanvas.getContext('2d');
   const videoCanvas = document.createElement('canvas');
   const vctx = videoCanvas.getContext('2d');
 
   let lastBgUpdate = 0;
-  let bgDelay = 50 + Math.random()*150;
+  let bgDelay = 50 + Math.random() * 150;
 
   function animate(timestamp){
     if(video.videoWidth > 0){
@@ -124,6 +129,7 @@
       videoCanvas.height = video.videoHeight;
       vctx.drawImage(video,0,0);
 
+      // only update the background every so often for that uneven flicker
       if(timestamp - lastBgUpdate > bgDelay){
         lastBgUpdate = timestamp;
         bgDelay = 50 + Math.random()*300;
@@ -132,26 +138,64 @@
         pixelCanvas.height = Math.max(1, video.videoHeight * pixelScale);
         pctx.drawImage(videoCanvas, 0, 0, pixelCanvas.width, pixelCanvas.height);
 
-        const imgData = pctx.getImageData(0,0,pixelCanvas.width,pixelCanvas.height);
-        const totalPixels = imgData.data.length/4;
-        const blackFraction = 0.08;
-        for(let i=0; i<totalPixels*blackFraction; i++){
-          const idx = Math.floor(Math.random()*totalPixels)*4;
-          imgData.data[idx] = 0;
-          imgData.data[idx+1] = 0;
-          imgData.data[idx+2] = 0;
-          imgData.data[idx+3] = 255;
-        }
-        pctx.putImageData(imgData,0,0);
+        // grab pixel data so we can scramble it a bit
+        const blockW = 4;
+        const blockH = 4;
+        const imgData = pctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
+        const src = imgData.data;
+        const copy = new Uint8ClampedArray(src);
 
+        // this part randomly shifts small chunks of pixels
+        // gives that compressed / bitsmosh kind of feel
+        for (let y = 0; y < pixelCanvas.height; y += blockH) {
+          for (let x = 0; x < pixelCanvas.width; x += blockW) {
+            if (Math.random() < 0.15) {
+              const shiftX = Math.floor((Math.random() - 0.5) * 10);
+              const shiftY = Math.floor((Math.random() - 0.5) * 6);
+              for (let yy = 0; yy < blockH; yy++) {
+                for (let xx = 0; xx < blockW; xx++) {
+                  const sx = Math.min(pixelCanvas.width - 1, Math.max(0, x + xx + shiftX));
+                  const sy = Math.min(pixelCanvas.height - 1, Math.max(0, y + yy + shiftY));
+                  const dx = x + xx;
+                  const dy = y + yy;
+                  const sIdx = (sy * pixelCanvas.width + sx) * 4;
+                  const dIdx = (dy * pixelCanvas.width + dx) * 4;
+                  src[dIdx] = copy[sIdx];
+                  src[dIdx + 1] = copy[sIdx + 1];
+                  src[dIdx + 2] = copy[sIdx + 2];
+                  src[dIdx + 3] = 255;
+                }
+              }
+            }
+          }
+        }
+
+        // drop the messed-up image back in
+        pctx.putImageData(imgData, 0, 0);
+
+        // scale it up so the pixels stay crisp
         bgCtx.imageSmoothingEnabled = false;
         bgCtx.drawImage(pixelCanvas, 0, 0, bgCanvas.width, bgCanvas.height);
 
+        // horizontal tearing — some scanlines get offset a bit
+        for (let y = 0; y < bgCanvas.height; y += 3) {
+          if (Math.random() < 0.07) {
+            const tearX = (Math.random() - 0.5) * 80;
+            const tearH = 2 + Math.random() * 4;
+            bgCtx.drawImage(
+              bgCanvas,
+              0, y, bgCanvas.width, tearH,
+              tearX, y, bgCanvas.width, tearH
+            );
+          }
+        }
+
+        // bigger chunks drifting around just a bit — adds motion texture
         const blockSize = 32;
         for(let y=0; y<bgCanvas.height; y+=blockSize*2){
           for(let x=0; x<bgCanvas.width; x+=blockSize*2){
-            if(Math.random() < 0.1){
-              const shiftX = (Math.random()-0.5)*20;
+            if(Math.random() < 0.08){
+              const shiftX = (Math.random()-0.5)*30;
               const shiftY = (Math.random()-0.5)*20;
               bgCtx.drawImage(
                 bgCanvas,
@@ -168,7 +212,7 @@
 
   video.addEventListener('play', ()=>requestAnimationFrame(animate));
 
-  // === Single error box that respawns on close ===
+  // spawns the little fake error window that keeps coming back
   function spawnError(){
     const error = document.createElement('div');
     error.className = 'error-box';
@@ -189,13 +233,12 @@
         </div>
       </div>`;
 
-    // add to DOM
     document.body.appendChild(error);
 
-    // attach event listeners
+    // when you close it, another one just pops up after a short pause
     const removeAndRespawn = () => {
       error.remove();
-      setTimeout(spawnError, 200 + Math.random()*400); // small delay for realism
+      setTimeout(spawnError, 200 + Math.random()*400);
     };
 
     error.querySelector('.close-btn').onclick = removeAndRespawn;
@@ -203,7 +246,6 @@
     error.querySelector('.cancel-btn').onclick = removeAndRespawn;
   }
 
-  // start with one error box
   spawnError();
 })();
 </script>
